@@ -1,27 +1,16 @@
 package batch
 
-import java.lang.management.ManagementFactory
-import org.apache.spark.{SparkContext, SparkConf}
-import org.apache.spark.sql.{SaveMode, SQLContext}
+import org.apache.spark.sql.SaveMode
 import domain._
+import utils.SparkUtils._
 
 
 object BatchJob {
   def main (args: Array[String]): Unit = {
 
-    // get spark configuration
-    val conf = new SparkConf()
-      .setAppName("Lambda with Spark")
-
-    // Check if running from IDE
-    if (ManagementFactory.getRuntimeMXBean.getInputArguments.toString.contains("IntelliJ IDEA")) {
-      System.setProperty("hadoop.home.dir", "F:\\Libraries\\WinUtils") // required for winutils
-      conf.setMaster("local[*]")
-    }
-
     // setup spark context
-    val sc = new  SparkContext(conf)
-    implicit val sqlContext = new SQLContext(sc)
+    val sc = getSparkContext("Lambda with Spark")
+    val sqlContext = getSQLContext(sc)
 
     import org.apache.spark.sql.functions._
     import sqlContext.implicits._
