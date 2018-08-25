@@ -8,7 +8,7 @@ object StreamingJob {
   def main(args: Array[String]): Unit = {
     // setup spark context
     val sc = getSparkContext("Lambda with Spark")
-
+    sc.setLogLevel("WARN")
 
     val batchDuration = Seconds(4)
     val ssc = new StreamingContext(sc, batchDuration)

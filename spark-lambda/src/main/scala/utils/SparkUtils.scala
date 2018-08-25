@@ -8,8 +8,9 @@ import org.apache.spark.{SparkContext, SparkConf}
 
 object SparkUtils {
   val isIDE:Boolean = {
-    ManagementFactory.getRuntimeMXBean.getInputArguments.toString.contains("IntelliJ IDEA")
+    ManagementFactory.getRuntimeMXBean.getName.contains("ildar-ubuntu-desktop")
   }
+
   def getSparkContext(appName: String) : SparkContext = {
     var checkpointDirectory = ""
 

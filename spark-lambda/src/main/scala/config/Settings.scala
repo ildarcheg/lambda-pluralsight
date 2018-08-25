@@ -9,11 +9,12 @@ object Settings {
   object WebLogGen {
     private val weblogGen = config.getConfig("clickstream")
 
-    lazy val records = weblogGen.getInt("records")
-    lazy val timeMultiplier = weblogGen.getInt("time_multiplier")
-    lazy val pages = weblogGen.getInt("pages")
-    lazy val visitors = weblogGen.getInt("visitors")
-    lazy val filePath = weblogGen.getString("file_path")
-
+    lazy val records:Int = weblogGen.getInt("records")
+    lazy val timeMultiplier:Int = weblogGen.getInt("time_multiplier")
+    lazy val pages:Int = weblogGen.getInt("pages")
+    lazy val visitors:Int = weblogGen.getInt("visitors")
+    lazy val filePath:String = weblogGen.getString("file_path")
+    lazy val destPath:String = weblogGen.getString("dest_path")
+    lazy val numberOfFiles:Int = weblogGen.getInt("number_of_files")
   }
 }
