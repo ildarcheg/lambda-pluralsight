@@ -10,7 +10,6 @@ object SparkUtils {
   val isIDE:Boolean = {
     ManagementFactory.getRuntimeMXBean.getName.contains("ildar-ubuntu-desktop")
   }
-
   def getSparkContext(appName: String) : SparkContext = {
     var checkpointDirectory = ""
 
@@ -37,7 +36,7 @@ object SparkUtils {
     sqlContext
   }
 
-  def getStreamingContext(streamingApp : (SparkContext, Duration) => StreamingContext, sc : SparkContext, batchDuration: Duration) : StreamingContext = {
+  def getStreamingContext(streamingApp : (SparkContext, Duration) => StreamingContext, sc : SparkContext, batchDuration: Duration) :StreamingContext = {
     val creatingFunc = () => streamingApp(sc, batchDuration)
     val ssc = sc.getCheckpointDir match {
       case Some(checkpointDir) => StreamingContext.getActiveOrCreate(checkpointDir, creatingFunc, sc.hadoopConfiguration, createOnError = true)
@@ -46,4 +45,5 @@ object SparkUtils {
     sc.getCheckpointDir.foreach( cp => ssc.checkpoint(cp))
     ssc
   }
+
 }

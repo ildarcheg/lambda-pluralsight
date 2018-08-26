@@ -1,10 +1,12 @@
 package streaming
 
-import akka.actor.FSM.CurrentState
-import domain.{Activity, ActivityByProduct}
+import domain.{VisitorsByProduct, ActivityByProduct, Activity}
 import org.apache.spark.SparkContext
+import org.apache.spark.sql.functions._
 import org.apache.spark.streaming._
 import utils.SparkUtils._
+import functions._
+import com.twitter.algebird.HyperLogLogMonoid
 
 
 object StreamingJob {
@@ -36,12 +38,19 @@ object StreamingJob {
           else
             None
         }
-      })
+      }).cache()
+
+      // activity by product
+      val activityStateSpec =
+        StateSpec
+          .function(mapActivityStateFunc)
+          .timeout(Minutes(120))
 
       val statefulActivityByProduct = activityStream.transform(rdd => {
         val df = rdd.toDF()
         df.registerTempTable("activity")
-        val activityByProduct = sqlContext.sql("""SELECT
+        val activityByProduct = sqlContext.sql(
+          """SELECT
                                             product,
                                             timestamp_hour,
                                             sum(case when action = 'purchase' then 1 else 0 end) as purchase_count,
@@ -52,35 +61,48 @@ object StreamingJob {
         activityByProduct
           .map { r => ((r.getString(0), r.getLong(1)),
             ActivityByProduct(r.getString(0), r.getLong(1), r.getLong(2), r.getLong(3), r.getLong(4))
-          ) }
-      } ).updateStateByKey( (newItemPerKey: Seq[ActivityByProduct], currentState: Option[(Long, Long, Long, Long)]) => {
-        var (prevTimeStamp, purchase_count, add_to_cart_count, page_view_count) = currentState.getOrElse((System.currentTimeMillis(), 0L, 0L, 0L))
-        var result: Option[(Long, Long, Long, Long)] = null
+            )
+          }
+      }).mapWithState(activityStateSpec)
 
-        if (newItemPerKey.isEmpty) {
-          if (System.currentTimeMillis() - prevTimeStamp > 30000 + 4000 )
-            result = None
-          else
-            result = Some((System.currentTimeMillis(), purchase_count, add_to_cart_count, page_view_count))
-        } else {
-          newItemPerKey.foreach(a => {
-            purchase_count += a.purchase_count
-            add_to_cart_count += a.add_to_cart_count
-            page_view_count += a.page_view_count
-          })
+      val activityStateSnapshot = statefulActivityByProduct.stateSnapshots()
+      activityStateSnapshot
+        .reduceByKeyAndWindow(
+          (a, b) => b,
+          (x, y) => x,
+          Seconds(30 / 4 * 4),
+          filterFunc = (record) => false
+        )
+        .foreachRDD(rdd => rdd.map(sr => ActivityByProduct(sr._1._1, sr._1._2, sr._2._1, sr._2._2, sr._2._3))
+          .toDF().registerTempTable("ActivityByProduct"))
 
-          result = Some((System.currentTimeMillis(), purchase_count, add_to_cart_count, page_view_count))
-        }
 
-        result
-      } )
+      // unique visitors by product
+      val visitorStateSpec =
+        StateSpec
+        .function(mapVisitorsStateFunc)
+        .timeout(Minutes(120))
 
-      statefulActivityByProduct.print(10)
+      val hll = new HyperLogLogMonoid(12)
+      val statefulVisitorsByProduct = activityStream.map( a => {
+        ((a.product, a.timestamp_hour), hll(a.visitor.getBytes))
+      } ).mapWithState(visitorStateSpec)
+
+      val visitorStateSnapshot = statefulVisitorsByProduct.stateSnapshots()
+      visitorStateSnapshot
+        .reduceByKeyAndWindow(
+          (a, b) => b,
+          (x, y) => x,
+          Seconds(30 / 4 * 4),
+          filterFunc = (record) => false
+        ) // only save or expose the snapshot every x seconds
+        .foreachRDD(rdd => rdd.map(sr => VisitorsByProduct(sr._1._1, sr._1._2, sr._2.approximateSize.estimate))
+        .toDF().registerTempTable("VisitorsByProduct"))
+
       ssc
     }
 
     val ssc = getStreamingContext(streamingApp, sc, batchDuration)
-
     ssc.start()
     ssc.awaitTermination()
 
