@@ -1,6 +1,7 @@
 package streaming
 
-import domain.{ActivityByProduct, Activity}
+import akka.actor.FSM.CurrentState
+import domain.{Activity, ActivityByProduct}
 import org.apache.spark.SparkContext
 import org.apache.spark.streaming._
 import utils.SparkUtils._
@@ -37,7 +38,7 @@ object StreamingJob {
         }
       })
 
-      activityStream.transform(rdd => {
+      val statefulActivityByProduct = activityStream.transform(rdd => {
         val df = rdd.toDF()
         df.registerTempTable("activity")
         val activityByProduct = sqlContext.sql("""SELECT
@@ -52,7 +53,29 @@ object StreamingJob {
           .map { r => ((r.getString(0), r.getLong(1)),
             ActivityByProduct(r.getString(0), r.getLong(1), r.getLong(2), r.getLong(3), r.getLong(4))
           ) }
-      } ).print()
+      } ).updateStateByKey( (newItemPerKey: Seq[ActivityByProduct], currentState: Option[(Long, Long, Long, Long)]) => {
+        var (prevTimeStamp, purchase_count, add_to_cart_count, page_view_count) = currentState.getOrElse((System.currentTimeMillis(), 0L, 0L, 0L))
+        var result: Option[(Long, Long, Long, Long)] = null
+
+        if (newItemPerKey.isEmpty) {
+          if (System.currentTimeMillis() - prevTimeStamp > 30000 + 4000 )
+            result = None
+          else
+            result = Some((System.currentTimeMillis(), purchase_count, add_to_cart_count, page_view_count))
+        } else {
+          newItemPerKey.foreach(a => {
+            purchase_count += a.purchase_count
+            add_to_cart_count += a.add_to_cart_count
+            page_view_count += a.page_view_count
+          })
+
+          result = Some((System.currentTimeMillis(), purchase_count, add_to_cart_count, page_view_count))
+        }
+
+        result
+      } )
+
+      statefulActivityByProduct.print(10)
       ssc
     }
 
